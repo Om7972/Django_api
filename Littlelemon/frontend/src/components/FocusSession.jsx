@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
+const fadeUp = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i = 0) => ({
+    opacity: 1, y: 0,
+    transition: { duration: 0.5, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] }
+  })
+};
+
 const FocusSession = () => {
   const [isSessionActive, setIsSessionActive] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(25 * 60); // 25 minutes in seconds
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [taskType, setTaskType] = useState('deep_work');
   const [distractions, setDistractions] = useState(0);
 
@@ -11,27 +19,17 @@ const FocusSession = () => {
     let interval = null;
     if (isSessionActive && timeLeft > 0) {
       interval = setInterval(() => {
-        setTimeLeft(timeLeft => timeLeft - 1);
+        setTimeLeft(t => t - 1);
       }, 1000);
     } else if (timeLeft === 0) {
       setIsSessionActive(false);
-      // Session completed
     }
     return () => clearInterval(interval);
   }, [isSessionActive, timeLeft]);
 
-  const startSession = () => {
-    setIsSessionActive(true);
-  };
-
-  const pauseSession = () => {
-    setIsSessionActive(false);
-  };
-
-  const resetSession = () => {
-    setIsSessionActive(false);
-    setTimeLeft(25 * 60);
-  };
+  const startSession = () => setIsSessionActive(true);
+  const pauseSession = () => setIsSessionActive(false);
+  const resetSession = () => { setIsSessionActive(false); setTimeLeft(25 * 60); };
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -39,75 +37,84 @@ const FocusSession = () => {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleDistraction = () => {
-    setDistractions(distractions + 1);
-  };
+  const progress = ((25 * 60 - timeLeft) / (25 * 60)) * 100;
 
   return (
-    <div className="container mx-auto px-6 py-8">
-      <motion.h1 
-        initial={{ y: -20 }}
-        animate={{ y: 0 }}
-        className="text-4xl font-bold text-center my-8 gradient-text"
+    <div className="py-6" id="focus-session-page">
+      {/* Page Header */}
+      <motion.div
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="mb-8"
       >
-        🎯 Focus Session
-      </motion.h1>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <h1 className="text-3xl sm:text-4xl font-bold gradient-text mb-1">🎯 Focus Session</h1>
+        <p className="text-gray-500 text-sm">Deep concentration mode with AI-powered recommendations.</p>
+      </motion.div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Timer Section */}
-        <motion.div 
+        <motion.div
           className="glass-card p-8"
-          initial={{ opacity: 0, x: -50 }}
-          animate={{ opacity: 1, x: 0 }}
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={0}
         >
-          <h2 className="text-xl font-semibold mb-4 gradient-text-primary">Pomodoro Timer</h2>
-          
-          <div className="text-center my-8 perspective-1000">
-            <motion.div 
-              className="text-7xl font-mono font-bold mb-8 inline-block clay-card px-12 py-6"
-              animate={isSessionActive ? { scale: [1, 1.02, 1] } : {}}
-              transition={{ duration: 1, repeat: Infinity }}
+          <h2 className="text-base font-semibold text-gray-300 mb-6">Pomodoro Timer</h2>
+
+          <div className="text-center mb-8">
+            <motion.div
+              className="inline-block rounded-2xl bg-gradient-to-br from-indigo-600/20 to-purple-600/20 border border-indigo-500/20 px-12 py-8"
+              animate={isSessionActive ? { scale: [1, 1.01, 1] } : {}}
+              transition={{ duration: 2, repeat: Infinity }}
             >
-              {formatTime(timeLeft)}
+              <div className="text-6xl sm:text-7xl font-extrabold tabular-nums gradient-text font-['JetBrains_Mono',monospace]">
+                {formatTime(timeLeft)}
+              </div>
             </motion.div>
-            
-            <div className="flex justify-center space-x-4">
+
+            <div className="flex justify-center gap-3 mt-8">
               {!isSessionActive ? (
-                <motion.button 
-                  className="clay-button px-8 py-3"
+                <motion.button
+                  className="clay-button px-7 py-3 text-sm"
                   onClick={startSession}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  id="start-session-btn"
                 >
                   ▶️ Start Session
                 </motion.button>
               ) : (
-                <motion.button 
-                  className="neuo-button px-8 py-3"
+                <motion.button
+                  className="neuo-button px-7 py-3 text-sm"
                   onClick={pauseSession}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  id="pause-session-btn"
                 >
                   ⏸️ Pause
                 </motion.button>
               )}
-              <motion.button 
-                className="glass-button px-8 py-3"
+              <motion.button
+                className="glass-button px-7 py-3 text-sm"
                 onClick={resetSession}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                id="reset-session-btn"
               >
                 🔄 Reset
               </motion.button>
             </div>
           </div>
-          
-          <div className="mt-8">
-            <label className="block mb-2 font-medium text-gray-300">Task Type</label>
-            <select 
+
+          <div>
+            <label className="block mb-2 text-sm font-medium text-gray-400">Task Type</label>
+            <select
               value={taskType}
               onChange={(e) => setTaskType(e.target.value)}
-              className="w-full p-3 rounded-xl neuo-input"
+              className="w-full neuo-input text-sm"
+              id="task-type-select"
             >
               <option value="deep_work">🧠 Deep Work</option>
               <option value="creative">🎨 Creative Work</option>
@@ -118,89 +125,89 @@ const FocusSession = () => {
             </select>
           </div>
         </motion.div>
-        
+
         {/* Session Stats */}
-        <motion.div 
+        <motion.div
           className="glass-card p-8"
-          initial={{ opacity: 0, x: 50 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: 0.1 }}
+          variants={fadeUp}
+          initial="hidden"
+          animate="visible"
+          custom={1}
         >
-          <h2 className="text-xl font-semibold mb-4 gradient-text-primary">Session Stats</h2>
-          
-          <div className="space-y-4">
-            <motion.div 
-              className="neuo-card p-4 flex justify-between items-center"
-              whileHover={{ scale: 1.03 }}
-            >
-              <span className="text-gray-300">Distractions:</span>
-              <span className={`text-3xl font-bold ${distractions === 0 ? 'text-green-400' : distractions < 3 ? 'text-yellow-400' : 'text-red-400'}`}>
+          <h2 className="text-base font-semibold text-gray-300 mb-6">Session Stats</h2>
+
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] border border-white/[0.04]">
+              <span className="text-sm text-gray-400">Distractions</span>
+              <span className={`text-2xl font-bold tabular-nums ${distractions === 0 ? 'text-emerald-400' : distractions < 3 ? 'text-amber-400' : 'text-rose-400'
+                }`}>
                 {distractions}
               </span>
-            </motion.div>
-            
-            <motion.div 
-              className="neuo-card p-4 flex justify-between items-center"
-              whileHover={{ scale: 1.03 }}
-            >
-              <span className="text-gray-300">Focus Quality:</span>
-              <span className={`text-2xl font-bold ${distractions === 0 ? 'text-green-400' : distractions < 3 ? 'text-yellow-400' : 'text-red-400'}`}>
+            </div>
+            <div className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03] border border-white/[0.04]">
+              <span className="text-sm text-gray-400">Focus Quality</span>
+              <span className={`text-sm font-semibold ${distractions === 0 ? 'text-emerald-400' : distractions < 3 ? 'text-amber-400' : 'text-rose-400'
+                }`}>
                 {distractions === 0 ? '🌟 Excellent' : distractions < 3 ? '👍 Good' : '💪 Needs Work'}
               </span>
-            </motion.div>
-            
-            <motion.button 
-              onClick={handleDistraction}
-              className="clay-button w-full bg-gradient-to-r from-red-500 to-pink-600"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+            </div>
+            <motion.button
+              onClick={() => setDistractions(d => d + 1)}
+              className="w-full py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-rose-600 to-pink-600 shadow-lg shadow-rose-500/20 hover:shadow-rose-500/30 transition-shadow"
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
+              id="log-distraction-btn"
             >
               ⚠️ Log Distraction
             </motion.button>
           </div>
-          
-          <div className="mt-8">
-            <h3 className="text-lg font-semibold mb-3 gradient-text-primary">✨ AI Recommendations</h3>
-            <ul className="space-y-3">
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">✨ AI Recommendations</h3>
+            <div className="space-y-2">
               {[
                 { icon: '🌡️', text: 'Maintain current environment for optimal focus' },
                 { icon: '☕', text: 'Take a 5-minute break after this session' },
-                { icon: '🎵', text: 'Try the "Deep Focus" soundscape for better concentration' }
+                { icon: '🎵', text: 'Try the "Deep Focus" soundscape for better concentration' },
               ].map((item, index) => (
-                <motion.li 
+                <motion.div
                   key={index}
-                  className="glass-card p-3 flex items-center"
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.3 + index * 0.1 }}
-                  whileHover={{ x: 5, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.04] hover:bg-white/[0.05] hover:border-white/[0.07] transition-all cursor-pointer"
+                  variants={fadeUp}
+                  initial="hidden"
+                  animate="visible"
+                  custom={index + 3}
+                  whileHover={{ x: 4 }}
                 >
-                  <span className="text-2xl mr-3">{item.icon}</span>
-                  <span className="text-gray-300">{item.text}</span>
-                </motion.li>
+                  <span className="text-lg">{item.icon}</span>
+                  <span className="text-sm text-gray-400">{item.text}</span>
+                </motion.div>
               ))}
-            </ul>
+            </div>
           </div>
         </motion.div>
       </div>
-      
-      {/* Progress Visualization */}
-      <motion.div 
-        className="glass-card p-8 mt-8"
-        initial={{ opacity: 0, y: 50 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.2 }}
+
+      {/* Progress Bar */}
+      <motion.div
+        className="glass-card p-6 mt-6"
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        custom={2}
       >
-        <h2 className="text-xl font-semibold mb-4 gradient-text-primary">Session Progress</h2>
-        <div className="w-full bg-gray-700 rounded-full h-6 overflow-hidden shadow-inner">
-          <motion.div 
-            className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 h-full rounded-full transition-all duration-1000 animate-gradient"
+        <h2 className="text-base font-semibold text-gray-300 mb-4">Session Progress</h2>
+        <div className="w-full h-3 bg-white/[0.06] rounded-full overflow-hidden">
+          <motion.div
+            className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full"
             initial={{ width: 0 }}
-            animate={{ width: `${((25*60 - timeLeft) / (25*60)) * 100}%` }}
-          ></motion.div>
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: 0.5 }}
+          />
         </div>
-        <p className="text-center mt-3 font-bold text-lg gradient-text">
-          {Math.round(((25*60 - timeLeft) / (25*60)) * 100)}% Complete
+        <p className="text-center mt-3 text-sm font-semibold">
+          <span className="gradient-text">{Math.round(progress)}%</span>
+          <span className="text-gray-500 ml-1.5">Complete</span>
         </p>
       </motion.div>
     </div>
