@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: flowspace_db
+      POSTGRES_USER: flowspace_user
+      POSTGRES_PASSWORD: flowspace_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # Redis for caching and WebSocket support
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  # Django Backend
+  backend:
+    build: 
+      context: .
+      dockerfile: Dockerfile.backend
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=1
+      - DATABASE_URL=postgresql://flowspace_user:flowspace_password@db:5432/flowspace_db
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - db
+      - redis
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    command: npm start
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
