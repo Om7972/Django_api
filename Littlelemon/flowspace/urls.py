@@ -1,26 +1,20 @@
+"""
+FlowSpace API URL configuration using DRF Routers.
+All endpoints are registered under the router and included via /api/v1/flowspace/.
+"""
+
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
+router = DefaultRouter()
+router.register(r'teams', views.TeamViewSet, basename='team')
+router.register(r'profiles', views.UserProfileViewSet, basename='profile')
+router.register(r'sessions', views.FocusSessionViewSet, basename='session')
+router.register(r'environment', views.EnvironmentLogViewSet, basename='environment')
+router.register(r'metrics', views.ProductivityMetricViewSet, basename='metric')
+router.register(r'dashboard', views.DashboardViewSet, basename='dashboard')
+
 urlpatterns = [
-    # UserProfile URLs
-    path('profiles/', views.UserProfileListCreateView.as_view(), name='profile-list-create'),
-    path('profiles/<int:pk>/', views.UserProfileDetailView.as_view(), name='profile-detail'),
-    
-    # FocusSession URLs
-    path('sessions/', views.FocusSessionListCreateView.as_view(), name='session-list-create'),
-    path('sessions/<int:pk>/', views.FocusSessionDetailView.as_view(), name='session-detail'),
-    path('sessions/start/', views.start_focus_session, name='session-start'),
-    path('sessions/<int:session_id>/end/', views.end_focus_session, name='session-end'),
-    
-    # EnvironmentLog URLs
-    path('environment/', views.EnvironmentLogListCreateView.as_view(), name='environment-list-create'),
-    path('environment/<int:pk>/', views.EnvironmentLogDetailView.as_view(), name='environment-detail'),
-    
-    # ProductivityMetric URLs
-    path('metrics/', views.ProductivityMetricListCreateView.as_view(), name='metric-list-create'),
-    path('metrics/<int:pk>/', views.ProductivityMetricDetailView.as_view(), name='metric-detail'),
-    
-    # Dashboard data
-    path('dashboard/', views.dashboard_data, name='dashboard-data'),
+    path('', include(router.urls)),
 ]
