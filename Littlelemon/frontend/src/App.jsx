@@ -168,7 +168,7 @@ const AnimatedRoutes = () => {
   const isLanding = location.pathname === '/';
 
   return (
-    <div className={isLanding ? '' : 'pt-28'} style={isLanding ? undefined : { paddingTop: '7rem' }}>
+    <div className={isLanding ? '' : 'pt-28'}>
       <div className={isLanding ? '' : 'max-w-7xl mx-auto px-4 sm:px-6 pb-12'}>
         <AnimatePresence mode="wait">
           <motion.div

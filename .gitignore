@@ -1,1 +1,96 @@
+# ============================
+# Dependencies
+# ============================
+node_modules/
+*/node_modules/
+
+# ============================
+# Environment Variables
+# ============================
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+
+# ============================
+# Build Output
+# ============================
+dist/
+build/
+*/dist/
+*/build/
+
+# ============================
+# Python / Django
+# ============================
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+db.sqlite3
+db.sqlite3-journal
+*.egg-info/
+*.egg
+.eggs/
+*.whl
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env_py/
+
+# Django
+*.log
+local_settings.py
+media/
+
+# ============================
+# IDE / Editor
+# ============================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================
+# OS Files
+# ============================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# ============================
+# Package & Lock Files (optional)
+# ============================
+package-lock.json
+yarn.lock
+
+# ============================
+# Miscellaneous
+# ============================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.cache/
+.tmp/
+*.bak
+*.orig
+
+# ============================
+# Archives
+# ============================
 /Littlelemon.zip
