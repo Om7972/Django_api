@@ -6,8 +6,10 @@ Explicit field declarations with input validation.
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
-    Team, TeamMembership, UserProfile,
-    FocusSession, EnvironmentLog, ProductivityMetric,
+    Subscription, Team, TeamMembership, TeamWorkspace,
+    UserProfile, FocusSession, DistractionEvent,
+    EnvironmentLog, ProductivityMetric,
+    Achievement, UserAchievement, UserStreak,
 )
 
 
@@ -30,6 +32,33 @@ class UserMiniSerializer(serializers.ModelSerializer):
 
 
 # =============================================================================
+# Subscription Serializers
+# =============================================================================
+class SubscriptionSerializer(serializers.ModelSerializer):
+    user = UserMiniSerializer(read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+    is_premium = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Subscription
+        fields = (
+            'id', 'user', 'plan', 'status', 'billing_cycle',
+            'is_active', 'is_premium',
+            'trial_start', 'trial_end',
+            'current_period_start', 'current_period_end',
+            'max_sessions_per_day', 'max_team_members',
+            'max_environment_devices', 'analytics_retention_days',
+            'ai_recommendations_enabled', 'advanced_analytics_enabled',
+            'custom_soundscapes_enabled',
+            'created_at', 'updated_at',
+        )
+        read_only_fields = (
+            'id', 'user', 'stripe_customer_id', 'stripe_subscription_id',
+            'created_at', 'updated_at',
+        )
+
+
+# =============================================================================
 # Team Serializers
 # =============================================================================
 class TeamMembershipSerializer(serializers.ModelSerializer):
@@ -41,14 +70,31 @@ class TeamMembershipSerializer(serializers.ModelSerializer):
         read_only_fields = ('id', 'joined_at')
 
 
+class TeamWorkspaceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TeamWorkspace
+        fields = (
+            'id', 'default_focus_duration', 'default_break_duration',
+            'daily_focus_goal_minutes', 'weekly_session_goal',
+            'share_focus_scores', 'share_streaks', 'leaderboard_enabled',
+            'visibility', 'daily_standup_enabled', 'standup_time',
+            'weekly_report_enabled', 'created_at', 'updated_at',
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
 class TeamSerializer(serializers.ModelSerializer):
     owner = UserMiniSerializer(read_only=True)
     members_count = serializers.SerializerMethodField()
     memberships = TeamMembershipSerializer(many=True, read_only=True)
+    workspace = TeamWorkspaceSerializer(read_only=True)
 
     class Meta:
         model = Team
-        fields = ('id', 'name', 'slug', 'owner', 'members_count', 'memberships', 'created_at')
+        fields = (
+            'id', 'name', 'slug', 'owner', 'members_count',
+            'memberships', 'workspace', 'created_at',
+        )
         read_only_fields = ('id', 'owner', 'created_at')
 
     def get_members_count(self, obj):
@@ -88,7 +134,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = (
-            'id', 'user', 'role', 'email_verified',
+            'id', 'user', 'role', 'email_verified', 'onboarding_completed',
+            'timezone', 'avatar_url',
             'preferred_temperature', 'preferred_light_level', 'preferred_noise_level',
             'focus_duration_preference', 'break_duration_preference',
             'philips_hue_bridge_ip', 'nest_token', 'smart_plug_ids',
@@ -114,19 +161,45 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 
 # =============================================================================
+# Distraction Event Serializer
+# =============================================================================
+class DistractionEventSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DistractionEvent
+        fields = (
+            'id', 'session', 'distraction_type', 'severity',
+            'description', 'recovery_time_seconds', 'timestamp', 'created_at',
+        )
+        read_only_fields = ('id', 'user', 'created_at')
+
+    def validate_severity(self, value):
+        if not (1 <= value <= 5):
+            raise serializers.ValidationError('Severity must be between 1 and 5.')
+        return value
+
+    def validate_recovery_time_seconds(self, value):
+        if value < 0:
+            raise serializers.ValidationError('Recovery time cannot be negative.')
+        return value
+
+
+# =============================================================================
 # Focus Session Serializers
 # =============================================================================
 class FocusSessionSerializer(serializers.ModelSerializer):
     user = UserMiniSerializer(read_only=True)
     duration_minutes = serializers.SerializerMethodField()
+    distraction_events = DistractionEventSerializer(many=True, read_only=True)
 
     class Meta:
         model = FocusSession
         fields = (
-            'id', 'user', 'task_type', 'start_time', 'end_time', 'duration',
-            'duration_minutes', 'is_completed', 'start_temperature',
+            'id', 'user', 'team', 'task_type', 'label',
+            'start_time', 'end_time', 'duration', 'duration_minutes',
+            'is_completed', 'start_temperature',
             'start_light_level', 'start_noise_level', 'distractions_count',
-            'focus_score', 'created_at', 'updated_at',
+            'focus_score', 'notes', 'distraction_events',
+            'created_at', 'updated_at',
         )
         read_only_fields = ('id', 'user', 'duration', 'created_at', 'updated_at')
 
@@ -149,10 +222,14 @@ class FocusSessionSerializer(serializers.ModelSerializer):
 class FocusSessionStartSerializer(serializers.Serializer):
     """Serializer for starting a new focus session."""
     task_type = serializers.ChoiceField(choices=FocusSession.FOCUS_TASK_TYPES, default='deep_work')
+    label = serializers.CharField(max_length=200, required=False, default='')
     start_temperature = serializers.FloatField()
     start_light_level = serializers.IntegerField()
     start_noise_level = serializers.IntegerField()
     focus_score = serializers.IntegerField(default=0)
+    team = serializers.PrimaryKeyRelatedField(
+        queryset=Team.objects.all(), required=False, allow_null=True
+    )
 
 
 # =============================================================================
@@ -197,8 +274,10 @@ class ProductivityMetricSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'user', 'date', 'total_focus_time', 'total_focus_time_minutes',
             'average_focus_score', 'distractions_count', 'tasks_completed',
+            'session_count', 'completed_session_count',
             'session_completion_rate', 'optimal_temperature', 'optimal_light_level',
-            'optimal_noise_level', 'created_at', 'updated_at',
+            'optimal_noise_level', 'top_distraction_type', 'avg_recovery_time_seconds',
+            'created_at', 'updated_at',
         )
         read_only_fields = ('id', 'user', 'created_at', 'updated_at')
 
@@ -206,3 +285,44 @@ class ProductivityMetricSerializer(serializers.ModelSerializer):
         if obj.total_focus_time:
             return round(obj.total_focus_time.total_seconds() / 60, 1)
         return None
+
+
+# =============================================================================
+# Achievement Serializers
+# =============================================================================
+class AchievementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Achievement
+        fields = (
+            'id', 'slug', 'name', 'description', 'category', 'rarity',
+            'icon', 'points', 'criteria_type', 'criteria_value',
+            'requires_premium', 'is_active',
+        )
+
+
+class UserAchievementSerializer(serializers.ModelSerializer):
+    achievement = AchievementSerializer(read_only=True)
+
+    class Meta:
+        model = UserAchievement
+        fields = ('id', 'achievement', 'unlocked_at', 'notified')
+        read_only_fields = ('id', 'unlocked_at')
+
+
+# =============================================================================
+# Streak Serializer
+# =============================================================================
+class UserStreakSerializer(serializers.ModelSerializer):
+    user = UserMiniSerializer(read_only=True)
+
+    class Meta:
+        model = UserStreak
+        fields = (
+            'id', 'user',
+            'current_streak_days', 'current_streak_start',
+            'longest_streak_days', 'longest_streak_start', 'longest_streak_end',
+            'last_active_date',
+            'active_days_this_week', 'active_days_this_month',
+            'total_active_days', 'updated_at',
+        )
+        read_only_fields = fields

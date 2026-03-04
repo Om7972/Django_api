@@ -3,7 +3,7 @@ FlowSpace API Views - ViewSet-based architecture with caching and custom actions
 """
 
 import logging
-from rest_framework import viewsets, status, permissions
+from rest_framework import viewsets, status, permissions, mixins
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
@@ -12,14 +12,21 @@ from django.utils import timezone
 from django.db.models import Avg, Sum, Count, Q
 
 from .models import (
-    Team, TeamMembership, UserProfile,
-    FocusSession, EnvironmentLog, ProductivityMetric,
+    Subscription, Team, TeamMembership, TeamWorkspace,
+    UserProfile, FocusSession, DistractionEvent,
+    EnvironmentLog, ProductivityMetric,
+    Achievement, UserAchievement, UserStreak,
 )
 from .serializers import (
+    SubscriptionSerializer,
     TeamSerializer, TeamCreateSerializer, TeamMembershipSerializer,
-    AddTeamMemberSerializer, UserProfileSerializer,
+    AddTeamMemberSerializer, TeamWorkspaceSerializer,
+    UserProfileSerializer,
     FocusSessionSerializer, FocusSessionStartSerializer,
+    DistractionEventSerializer,
     EnvironmentLogSerializer, ProductivityMetricSerializer,
+    AchievementSerializer, UserAchievementSerializer,
+    UserStreakSerializer,
 )
 from .filters import FocusSessionFilter, EnvironmentLogFilter, ProductivityMetricFilter
 from .pagination import SmallPagination, TimeSeriesPagination
@@ -53,6 +60,54 @@ class IsTeamAdminOrOwner(permissions.BasePermission):
 
 
 # =============================================================================
+# Subscription ViewSet
+# =============================================================================
+class SubscriptionViewSet(viewsets.GenericViewSet,
+                          mixins.RetrieveModelMixin):
+    """
+    View and manage user subscription.
+    - me: GET current user's subscription
+    """
+    serializer_class = SubscriptionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Subscription.objects.filter(user=self.request.user)
+
+    @action(detail=False, methods=['get'], url_path='me')
+    def me(self, request):
+        """Get or create the current user's subscription."""
+        subscription, created = Subscription.objects.get_or_create(
+            user=request.user,
+            defaults={'plan': 'free', 'status': 'active'}
+        )
+        serializer = self.get_serializer(subscription)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='limits')
+    def limits(self, request):
+        """Get current plan limits."""
+        sub, _ = Subscription.objects.get_or_create(
+            user=request.user,
+            defaults={'plan': 'free', 'status': 'active'}
+        )
+        return Response({
+            'plan': sub.plan,
+            'is_active': sub.is_active,
+            'is_premium': sub.is_premium,
+            'limits': {
+                'max_sessions_per_day': sub.max_sessions_per_day,
+                'max_team_members': sub.max_team_members,
+                'max_environment_devices': sub.max_environment_devices,
+                'analytics_retention_days': sub.analytics_retention_days,
+                'ai_recommendations': sub.ai_recommendations_enabled,
+                'advanced_analytics': sub.advanced_analytics_enabled,
+                'custom_soundscapes': sub.custom_soundscapes_enabled,
+            }
+        })
+
+
+# =============================================================================
 # Team ViewSet
 # =============================================================================
 class TeamViewSet(viewsets.ModelViewSet):
@@ -70,7 +125,7 @@ class TeamViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return Team.objects.filter(
             Q(owner=self.request.user) | Q(members=self.request.user)
-        ).distinct()
+        ).distinct().select_related('owner', 'workspace').prefetch_related('memberships__user')
 
     def get_serializer_class(self):
         if self.action == 'create':
@@ -81,6 +136,8 @@ class TeamViewSet(viewsets.ModelViewSet):
         team = serializer.save(owner=self.request.user)
         # Auto-add owner as admin member
         TeamMembership.objects.create(user=self.request.user, team=team, role='admin')
+        # Auto-create workspace
+        TeamWorkspace.objects.create(team=team)
         logger.info('Team created: %s by user %s', team.name, self.request.user.username)
 
     @action(detail=True, methods=['post'], url_path='add-member')
@@ -133,20 +190,56 @@ class TeamViewSet(viewsets.ModelViewSet):
         logger.info('User %s removed from team %s', user.username, team.name)
         return Response({'message': username + ' removed from team.'}, status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=['get', 'put', 'patch'], url_path='workspace')
+    def workspace(self, request, pk=None):
+        """Get or update team workspace settings."""
+        team = self.get_object()
+        ws, _ = TeamWorkspace.objects.get_or_create(team=team)
+
+        if request.method in ('PUT', 'PATCH'):
+            serializer = TeamWorkspaceSerializer(
+                ws, data=request.data, partial=(request.method == 'PATCH')
+            )
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(TeamWorkspaceSerializer(ws).data)
+
+    @action(detail=True, methods=['get'], url_path='leaderboard')
+    def leaderboard(self, request, pk=None):
+        """Team focus score leaderboard."""
+        team = self.get_object()
+        today = timezone.now().date()
+        member_ids = team.memberships.values_list('user_id', flat=True)
+
+        leaderboard = (
+            FocusSession.objects.filter(
+                user_id__in=member_ids,
+                start_time__date=today,
+                is_completed=True
+            )
+            .values('user__username', 'user__id')
+            .annotate(
+                avg_score=Avg('focus_score'),
+                total_sessions=Count('id'),
+            )
+            .order_by('-avg_score')
+        )
+
+        return Response(list(leaderboard))
+
 
 # =============================================================================
 # UserProfile ViewSet
 # =============================================================================
 class UserProfileViewSet(viewsets.ModelViewSet):
-    """
-    User profile management.
-    - me: GET/PUT current user's profile
-    """
+    """User profile management."""
     serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
 
     def get_queryset(self):
-        return UserProfile.objects.filter(user=self.request.user)
+        return UserProfile.objects.filter(user=self.request.user).select_related('user')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -179,12 +272,14 @@ class FocusSessionViewSet(viewsets.ModelViewSet):
     serializer_class = FocusSessionSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
     filterset_class = FocusSessionFilter
-    search_fields = ['task_type']
+    search_fields = ['task_type', 'label']
     ordering_fields = ['start_time', 'focus_score', 'distractions_count']
     ordering = ['-start_time']
 
     def get_queryset(self):
-        return FocusSession.objects.filter(user=self.request.user)
+        return FocusSession.objects.filter(
+            user=self.request.user
+        ).select_related('user', 'team').prefetch_related('distraction_events')
 
     def perform_create(self, serializer):
         session = serializer.save(user=self.request.user)
@@ -209,7 +304,7 @@ class FocusSessionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='end')
     def end_session(self, request, pk=None):
-        """End an active focus session."""
+        """End an active focus session and update streak."""
         session = self.get_object()
         if session.end_time:
             return Response(
@@ -221,26 +316,49 @@ class FocusSessionViewSet(viewsets.ModelViewSet):
         session.duration = session.end_time - session.start_time
         session.is_completed = True
 
-        # Update focus score if provided
         if 'focus_score' in request.data:
             session.focus_score = request.data['focus_score']
         if 'distractions_count' in request.data:
             session.distractions_count = request.data['distractions_count']
+        if 'notes' in request.data:
+            session.notes = request.data['notes']
 
         session.save()
         invalidate_dashboard_cache(request.user.id)
         invalidate_focus_score_cache(request.user.id)
 
+        # Update streak
+        streak, _ = UserStreak.objects.get_or_create(user=request.user)
+        streak.update_streak()
+
         logger.info('Focus session ended: %s (duration: %s)', session.id, session.duration)
         return Response(FocusSessionSerializer(session).data)
+
+    @action(detail=True, methods=['post'], url_path='add-distraction')
+    def add_distraction(self, request, pk=None):
+        """Log a distraction event during a focus session."""
+        session = self.get_object()
+        if session.end_time:
+            return Response(
+                {'error': 'Cannot add distractions to ended session.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = DistractionEventSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(session=session, user=request.user)
+
+        # Increment session distraction count
+        session.distractions_count += 1
+        session.save(update_fields=['distractions_count'])
+
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=['get'], url_path='stats')
     def session_stats(self, request):
         """Get aggregate statistics for the user's focus sessions."""
         sessions = self.get_queryset()
         today = timezone.now().date()
-
-        # Today's stats
         today_sessions = sessions.filter(start_time__date=today)
 
         stats = {
@@ -272,13 +390,48 @@ class FocusSessionViewSet(viewsets.ModelViewSet):
 
 
 # =============================================================================
+# DistractionEvent ViewSet
+# =============================================================================
+class DistractionEventViewSet(viewsets.ModelViewSet):
+    """CRUD for distraction events."""
+    serializer_class = DistractionEventSerializer
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
+    ordering = ['-timestamp']
+
+    def get_queryset(self):
+        return DistractionEvent.objects.filter(user=self.request.user).select_related('session')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+    @action(detail=False, methods=['get'], url_path='analysis')
+    def distraction_analysis(self, request):
+        """Analyze distraction patterns."""
+        events = self.get_queryset()
+        return Response({
+            'total_events': events.count(),
+            'by_type': dict(
+                events.values_list('distraction_type')
+                .annotate(count=Count('id'))
+                .values_list('distraction_type', 'count')
+            ),
+            'avg_severity': events.aggregate(avg=Avg('severity'))['avg'] or 0,
+            'avg_recovery_seconds': events.aggregate(
+                avg=Avg('recovery_time_seconds')
+            )['avg'] or 0,
+            'by_severity': dict(
+                events.values_list('severity')
+                .annotate(count=Count('id'))
+                .values_list('severity', 'count')
+            ),
+        })
+
+
+# =============================================================================
 # EnvironmentLog ViewSet
 # =============================================================================
 class EnvironmentLogViewSet(viewsets.ModelViewSet):
-    """
-    CRUD for environment readings.
-    Uses cursor-based pagination for time-series data.
-    """
+    """CRUD for environment readings with cursor-based pagination."""
     serializer_class = EnvironmentLogSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
     filterset_class = EnvironmentLogFilter
@@ -308,10 +461,7 @@ class EnvironmentLogViewSet(viewsets.ModelViewSet):
 # ProductivityMetric ViewSet
 # =============================================================================
 class ProductivityMetricViewSet(viewsets.ModelViewSet):
-    """
-    CRUD for daily productivity metrics.
-    Supports filtering by date range and minimum score.
-    """
+    """CRUD for daily productivity metrics."""
     serializer_class = ProductivityMetricSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
     filterset_class = ProductivityMetricFilter
@@ -325,12 +475,55 @@ class ProductivityMetricViewSet(viewsets.ModelViewSet):
 
 
 # =============================================================================
+# Achievement ViewSet
+# =============================================================================
+class AchievementViewSet(viewsets.ReadOnlyModelViewSet):
+    """List all available achievements (read-only)."""
+    serializer_class = AchievementSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = SmallPagination
+    search_fields = ['name', 'description']
+    filterset_fields = ['category', 'rarity', 'is_active']
+    ordering = ['category', 'criteria_value']
+
+    def get_queryset(self):
+        return Achievement.objects.filter(is_active=True)
+
+
+class UserAchievementViewSet(viewsets.ReadOnlyModelViewSet):
+    """List achievements unlocked by the current user."""
+    serializer_class = UserAchievementSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    ordering = ['-unlocked_at']
+
+    def get_queryset(self):
+        return UserAchievement.objects.filter(
+            user=self.request.user
+        ).select_related('achievement')
+
+
+# =============================================================================
+# Streak ViewSet
+# =============================================================================
+class UserStreakViewSet(viewsets.GenericViewSet):
+    """View current user streak data."""
+    serializer_class = UserStreakSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    @action(detail=False, methods=['get'], url_path='me')
+    def me(self, request):
+        """Get current user's streak data."""
+        streak, _ = UserStreak.objects.get_or_create(user=request.user)
+        return Response(UserStreakSerializer(streak).data)
+
+
+# =============================================================================
 # Dashboard ViewSet (read-only, cached)
 # =============================================================================
 class DashboardViewSet(viewsets.ViewSet):
     """
     Aggregated dashboard data endpoint with Redis caching.
-    GET /dashboard/ - returns focus stats, environment, and productivity data.
+    GET /dashboard/ - returns focus stats, environment, productivity, streak.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -344,8 +537,6 @@ class DashboardViewSet(viewsets.ViewSet):
 
         # Build fresh dashboard data
         today = timezone.now().date()
-
-        # Latest environment
         latest_env = EnvironmentLog.objects.filter(user=user).order_by('-timestamp').first()
 
         # Today's sessions
@@ -364,8 +555,21 @@ class DashboardViewSet(viewsets.ViewSet):
             focus_score = today_sessions.aggregate(avg=Avg('focus_score'))['avg'] or 0
             set_focus_score_cache(user.id, focus_score)
 
-        # Today's productivity metric
+        # Streak
+        streak, _ = UserStreak.objects.get_or_create(user=user)
+
+        # Subscription
+        sub, _ = Subscription.objects.get_or_create(
+            user=user, defaults={'plan': 'free', 'status': 'active'}
+        )
+
+        # Today's metric
         latest_metric = ProductivityMetric.objects.filter(user=user, date=today).first()
+
+        # Recent achievements
+        recent_achievements = UserAchievement.objects.filter(
+            user=user
+        ).select_related('achievement').order_by('-unlocked_at')[:5]
 
         data = {
             'environment': EnvironmentLogSerializer(latest_env).data if latest_env else None,
@@ -376,11 +580,15 @@ class DashboardViewSet(viewsets.ViewSet):
                 'total_focus_time_seconds': total_focus_time,
                 'avg_focus_score': round(focus_score, 1),
             },
+            'streak': UserStreakSerializer(streak).data,
+            'subscription': {
+                'plan': sub.plan,
+                'is_premium': sub.is_premium,
+            },
             'productivity': ProductivityMetricSerializer(latest_metric).data if latest_metric else None,
+            'recent_achievements': UserAchievementSerializer(recent_achievements, many=True).data,
             'cached_at': timezone.now().isoformat(),
         }
 
-        # Cache the result
         set_dashboard_cache(user.id, data)
-
         return Response(data)
