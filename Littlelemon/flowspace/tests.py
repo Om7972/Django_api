@@ -2,8 +2,9 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from rest_framework import status
-from .models import UserProfile, FocusSession, EnvironmentLog, ProductivityMetric
+from .models import UserProfile, FocusSession, EnvironmentLog, ProductivityMetric, Subscription, UserStreak
 from datetime import datetime, timedelta
+from django.utils import timezone
 
 class FlowSpaceAPITestCase(TestCase):
     def setUp(self):
@@ -18,23 +19,34 @@ class FlowSpaceAPITestCase(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
         
-        # Create a user profile
+        # Create user models (since register flow normally handles this, we do it manually for tests)
         self.profile = UserProfile.objects.create(
             user=self.user,
             preferred_temperature=22.0,
             preferred_light_level=300,
             preferred_noise_level=40
         )
+        self.subscription = Subscription.objects.create(
+            user=self.user,
+            plan='free',
+            status='active'
+        )
+        self.streak = UserStreak.objects.create(user=self.user)
         
         # Create a focus session
+        start_time = timezone.now() - timedelta(hours=1)
+        end_time = timezone.now()
         self.focus_session = FocusSession.objects.create(
             user=self.user,
             task_type='deep_work',
-            start_time=datetime.now(),
+            start_time=start_time,
+            end_time=end_time,
+            duration=end_time - start_time,
             start_temperature=22.0,
             start_light_level=300,
             start_noise_level=40,
-            focus_score=85
+            focus_score=85,
+            is_completed=True
         )
         
         # Create an environment log
@@ -48,7 +60,7 @@ class FlowSpaceAPITestCase(TestCase):
         # Create a productivity metric
         self.productivity_metric = ProductivityMetric.objects.create(
             user=self.user,
-            date=datetime.now().date(),
+            date=timezone.now().date(),
             total_focus_time=timedelta(hours=2),
             average_focus_score=85,
             tasks_completed=5,
@@ -58,46 +70,38 @@ class FlowSpaceAPITestCase(TestCase):
             optimal_noise_level=40
         )
 
-    def test_get_user_profile(self):
-        """Test retrieving user profile"""
-        response = self.client.get('/api/flowspace/profiles/')
+    def test_get_user_me(self):
+        """Test retrieving current user profile"""
+        response = self.client.get('/api/v1/users/me')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['preferred_temperature'], 22.0)
+        self.assertEqual(response.data['username'], 'testuser')
+        self.assertEqual(response.data['profile']['preferred_temperature'], 22.0)
 
-    def test_create_focus_session(self):
-        """Test creating a focus session"""
+    def test_start_focus_session(self):
+        """Test starting a focus session"""
         data = {
             'task_type': 'creative',
-            'start_time': datetime.now().isoformat(),
             'start_temperature': 21.5,
             'start_light_level': 350,
             'start_noise_level': 38,
-            'focus_score': 78
+            'focus_score': 0
         }
-        response = self.client.post('/api/flowspace/sessions/', data, format='json')
+        response = self.client.post('/api/v1/sessions/start', data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['task_type'], 'creative')
-        self.assertEqual(response.data['focus_score'], 78)
+        self.assertFalse(response.data['is_completed'])
 
-    def test_get_environment_logs(self):
-        """Test retrieving environment logs"""
-        response = self.client.get('/api/flowspace/environment/')
+    def test_get_environment_history(self):
+        """Test retrieving environment history"""
+        response = self.client.get('/api/v1/environment/history')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['temperature'], 22.0)
+        self.assertEqual(len(response.data['results']), 1)
+        self.assertEqual(response.data['results'][0]['temperature'], 22.0)
 
-    def test_get_productivity_metrics(self):
-        """Test retrieving productivity metrics"""
-        response = self.client.get('/api/flowspace/metrics/')
+    def test_session_analytics(self):
+        """Test retrieving session analytics"""
+        response = self.client.get('/api/v1/sessions/analytics')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['average_focus_score'], 85)
-
-    def test_dashboard_data(self):
-        """Test retrieving dashboard data"""
-        response = self.client.get('/api/flowspace/dashboard/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('environment_data', response.data)
-        self.assertIn('focus_stats', response.data)
-        self.assertIn('productivity_metric', response.data)
+        self.assertIn('summary', response.data)
+        self.assertIn('daily_breakdown', response.data)
+        self.assertEqual(response.data['summary']['total_sessions'], 1)

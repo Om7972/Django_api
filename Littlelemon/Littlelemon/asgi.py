@@ -11,16 +11,18 @@ import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
-from channels.auth import AuthMiddlewareStack
+from flowspace.jwt_middleware import JWTAuthMiddlewareStack
 import flowspace.routing
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Littlelemon.settings')
 
 application = ProtocolTypeRouter({
     "http": get_asgi_application(),
-    "websocket": AuthMiddlewareStack(
-        URLRouter(
-            flowspace.routing.websocket_urlpatterns
+    "websocket": AllowedHostsOriginValidator(
+        JWTAuthMiddlewareStack(
+            URLRouter(
+                flowspace.routing.websocket_urlpatterns
+            )
         )
     ),
 })

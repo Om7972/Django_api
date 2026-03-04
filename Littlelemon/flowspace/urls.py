@@ -1,33 +1,51 @@
 """
-FlowSpace API URL configuration using DRF Routers.
-All endpoints are registered under the router and included via /api/v1/flowspace/.
+FlowSpace AI - URL Configuration
+Maps exact paths: /auth/, /users/, /sessions/, /environment/, /ai/, /team/
+All included under /api/v1/ from the project urls.py
 """
 
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from django.urls import path
 from . import views
 
-router = DefaultRouter()
-
-# Core resources
-router.register(r'subscription', views.SubscriptionViewSet, basename='subscription')
-router.register(r'teams', views.TeamViewSet, basename='team')
-router.register(r'profiles', views.UserProfileViewSet, basename='profile')
-
-# Sessions & tracking
-router.register(r'sessions', views.FocusSessionViewSet, basename='session')
-router.register(r'distractions', views.DistractionEventViewSet, basename='distraction')
-router.register(r'environment', views.EnvironmentLogViewSet, basename='environment')
-router.register(r'metrics', views.ProductivityMetricViewSet, basename='metric')
-
-# Gamification
-router.register(r'achievements', views.AchievementViewSet, basename='achievement')
-router.register(r'my-achievements', views.UserAchievementViewSet, basename='user-achievement')
-router.register(r'streaks', views.UserStreakViewSet, basename='streak')
-
-# Dashboard (aggregated, cached)
-router.register(r'dashboard', views.DashboardViewSet, basename='dashboard')
-
 urlpatterns = [
-    path('', include(router.urls)),
+    # =========================================================================
+    # AUTH - Registration, Login, Token Management
+    # =========================================================================
+    path('auth/register', views.RegisterView.as_view(), name='auth-register'),
+    path('auth/login', views.LoginView.as_view(), name='auth-login'),
+    path('auth/refresh', views.RefreshTokenView.as_view(), name='auth-refresh'),
+    path('auth/logout', views.LogoutView.as_view(), name='auth-logout'),
+
+    # =========================================================================
+    # USER - Profile Management
+    # =========================================================================
+    path('users/me', views.UserMeView.as_view(), name='users-me'),
+
+    # =========================================================================
+    # FOCUS - Session Management & Analytics
+    # =========================================================================
+    path('sessions/start', views.SessionStartView.as_view(), name='sessions-start'),
+    path('sessions/end', views.SessionEndView.as_view(), name='sessions-end'),
+    path('sessions/history', views.SessionHistoryView.as_view(), name='sessions-history'),
+    path('sessions/analytics', views.SessionAnalyticsView.as_view(), name='sessions-analytics'),
+
+    # =========================================================================
+    # ENVIRONMENT - IoT & Workspace Monitoring
+    # =========================================================================
+    path('environment/log', views.EnvironmentLogView.as_view(), name='environment-log'),
+    path('environment/history', views.EnvironmentHistoryView.as_view(), name='environment-history'),
+
+    # =========================================================================
+    # AI - Predictions, Optimization, Reports
+    # =========================================================================
+    path('ai/focus-prediction', views.AIFocusPredictionView.as_view(), name='ai-focus-prediction'),
+    path('ai/optimize-environment', views.AIOptimizeEnvironmentView.as_view(), name='ai-optimize-env'),
+    path('ai/weekly-report', views.AIWeeklyReportView.as_view(), name='ai-weekly-report'),
+
+    # =========================================================================
+    # TEAM - Collaboration & Team Dashboard
+    # =========================================================================
+    path('team/create', views.TeamCreateView.as_view(), name='team-create'),
+    path('team/invite', views.TeamInviteView.as_view(), name='team-invite'),
+    path('team/dashboard', views.TeamDashboardView.as_view(), name='team-dashboard'),
 ]
