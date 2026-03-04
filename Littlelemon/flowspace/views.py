@@ -32,8 +32,9 @@ from .serializers import (
     RegisterSerializer, LoginSerializer, LogoutSerializer,
     UserMeSerializer, UserUpdateSerializer,
     FocusSessionStartSerializer, FocusSessionEndSerializer, FocusSessionSerializer,
+    SessionDistractionLogSerializer, DistractionEventSerializer,
     EnvironmentLogCreateSerializer, EnvironmentLogSerializer,
-    EnvironmentOptimizeSerializer,
+    EnvironmentOptimizeSerializer, AIAutoAdjustSerializer,
     TeamCreateSerializer, TeamInviteSerializer, TeamSerializer,
     TeamMembershipSerializer,
     ProductivityMetricSerializer,
@@ -413,9 +414,35 @@ class SessionEndView(APIView):
         session.end_time = timezone.now()
         session.duration = session.end_time - session.start_time
         session.is_completed = True
-        session.focus_score = data['focus_score']
         session.distractions_count = data['distractions_count']
         session.notes = data.get('notes', '')
+
+        # --- FlowScore Algorithm ---
+        # FlowScore = (session_duration × consistency × environment_quality × break_quality)
+        duration_minutes = session.duration.total_seconds() / 60.0
+        
+        # Consistency: drops based on distractions relative to time
+        consistency = max(0.1, 1.0 - (session.distractions_count / max(duration_minutes / 10.0, 1.0)))
+        
+        # Environment Quality: distance from preferred
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+        env_quality = 1.0
+        if session.start_temperature:
+            if abs(session.start_temperature - profile.preferred_temperature) > 3: env_quality -= 0.15
+            if abs(session.start_light_level - profile.preferred_light_level) > 150: env_quality -= 0.15
+            if abs(session.start_noise_level - profile.preferred_noise_level) > 15: env_quality -= 0.15
+        env_quality = max(0.4, env_quality)
+        
+        break_quality = 1.0 # Placeholder for break quality
+
+        # Calculate a 0-100 score where 60+ mins is full duration factor
+        duration_factor = min(1.0, max(0.2, duration_minutes / 60.0))
+        flow_score_calc = (duration_factor * consistency * env_quality * break_quality) * 100
+        
+        # Blend user's reported score with FlowScore Algorithm
+        user_reported = data.get('focus_score', 0)
+        session.focus_score = int((user_reported + flow_score_calc) / 2) if user_reported else int(flow_score_calc)
+        
         session.save()
 
         # Update streak
@@ -425,11 +452,55 @@ class SessionEndView(APIView):
         invalidate_dashboard_cache(request.user.id)
         invalidate_focus_score_cache(request.user.id)
 
-        logger.info('Session ended: %s (score: %s)', session.id, session.focus_score)
+        logger.info('Session ended: %s (FlowScore: %s)', session.id, session.focus_score)
 
         response_data = FocusSessionSerializer(session).data
         response_data['streak'] = UserStreakSerializer(streak).data
         return Response(response_data)
+
+
+class SessionDistractionLogView(APIView):
+    """
+    POST /api/v1/sessions/distraction
+
+    Log a distraction (e.g., from frontend tab pause or inactivity).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = SessionDistractionLogSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            session = FocusSession.objects.get(id=data['session_id'], user=request.user)
+        except FocusSession.DoesNotExist:
+            return Response({'error': 'session_not_found', 'message': 'Session not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        distraction = DistractionEvent.objects.create(
+            user=request.user,
+            session=session,
+            distraction_type=data['distraction_type'],
+            severity=data['severity'],
+            description=data.get('description', ''),
+            recovery_time_seconds=data['recovery_time_seconds']
+        )
+        
+        session.distractions_count += 1
+        session.save(update_fields=['distractions_count'])
+
+        suggestions = {
+            'phone': 'Turn on airplane mode or put your phone in another room.',
+            'internal': 'Take a deep breath and gently guide your focus back to the task.',
+            'social_media': 'Try a website blocker or close unnecessary tabs.',
+        }
+        recovery_suggestion = suggestions.get(distraction.distraction_type, 'Take a quick sip of water and refocus on your immediate next step.')
+
+        return Response({
+            'logged': True,
+            'distraction': DistractionEventSerializer(distraction).data,
+            'recovery_suggestion': recovery_suggestion
+        }, status=status.HTTP_201_CREATED)
 
 
 class SessionHistoryView(APIView):
@@ -1084,6 +1155,61 @@ class AIOptimizeEnvironmentView(APIView):
                 'noise_level': optimal_noise,
             },
             'device_commands': device_commands,
+        })
+
+
+class AIAutoAdjustView(APIView):
+    """
+    POST /api/v1/ai/auto-adjust
+
+    Triggered when focus drops to suggest micro-changes.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = AIAutoAdjustSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        score = data['current_score']
+        
+        # If score is fine, no adjustment
+        if score > 75:
+            return Response({
+                'needs_adjustment': False,
+                'explanation': 'Your focus matches optimal parameters. Keep going!'
+            })
+
+        suggestions = []
+        
+        # Micro break
+        suggestions.append({
+            'type': 'break',
+            'action': 'Take a 3-minute micro-break',
+            'reason': 'Your focus score has dropped below the threshold. A brief stretch can reset your attention span.'
+        })
+
+        # Lighting/Sound
+        profile, _ = UserProfile.objects.get_or_create(user=request.user)
+
+        if data['current_light_level'] < profile.preferred_light_level - 50:
+            suggestions.append({
+                'type': 'lighting',
+                'action': 'Increase lighting',
+                'reason': 'Low light can induce fatigue. Brighter surroundings boost alertness.'
+            })
+            
+        if data['current_noise_level'] > profile.preferred_noise_level + 15:
+            suggestions.append({
+                'type': 'soundscape',
+                'action': 'Play White Noise / Binaural Beats',
+                'reason': 'Current noise exceeds your optimal flow threshold. Sound masking will help.'
+            })
+
+        return Response({
+            'needs_adjustment': True,
+            'explanation': 'AI detected a drop in your focus probability.',
+            'suggestions': suggestions
         })
 
 

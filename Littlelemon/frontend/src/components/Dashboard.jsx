@@ -76,7 +76,14 @@ const Dashboard = () => {
             />
             <div className="hidden sm:block">
               <p className="text-sm font-medium text-white">John Doe</p>
-              <p className="text-xs text-gray-500">Pro Plan</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-xs bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full font-bold border border-indigo-500/30">
+                  💎 Deep Work Master
+                </span>
+                <span className="text-xs text-amber-400 flex items-center font-bold">
+                  🔥 15 Day Streak
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -90,8 +97,8 @@ const Dashboard = () => {
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={`relative px-5 py-2.5 rounded-xl text-sm font-medium capitalize transition-all duration-300 ${activeTab === tab
-                  ? 'text-white'
-                  : 'text-gray-500 hover:text-gray-300'
+                ? 'text-white'
+                : 'text-gray-500 hover:text-gray-300'
                 }`}
               id={`tab-${tab}`}
             >

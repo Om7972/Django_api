@@ -26,6 +26,7 @@ urlpatterns = [
     # =========================================================================
     path('sessions/start', views.SessionStartView.as_view(), name='sessions-start'),
     path('sessions/end', views.SessionEndView.as_view(), name='sessions-end'),
+    path('sessions/distraction', views.SessionDistractionLogView.as_view(), name='sessions-distraction'),
     path('sessions/history', views.SessionHistoryView.as_view(), name='sessions-history'),
     path('sessions/analytics', views.SessionAnalyticsView.as_view(), name='sessions-analytics'),
 
@@ -40,6 +41,7 @@ urlpatterns = [
     # =========================================================================
     path('ai/focus-prediction', views.AIFocusPredictionView.as_view(), name='ai-focus-prediction'),
     path('ai/optimize-environment', views.AIOptimizeEnvironmentView.as_view(), name='ai-optimize-env'),
+    path('ai/auto-adjust', views.AIAutoAdjustView.as_view(), name='ai-auto-adjust'),
     path('ai/weekly-report', views.AIWeeklyReportView.as_view(), name='ai-weekly-report'),
 
     # =========================================================================

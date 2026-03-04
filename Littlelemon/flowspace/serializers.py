@@ -91,14 +91,32 @@ class UserMeSerializer(serializers.ModelSerializer):
     subscription = serializers.SerializerMethodField()
     streak = serializers.SerializerMethodField()
 
+    focus_level = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = (
             'id', 'username', 'email', 'first_name', 'last_name',
-            'date_joined', 'is_active',
+            'date_joined', 'is_active', 'focus_level',
             'profile', 'subscription', 'streak',
         )
-        read_only_fields = ('id', 'date_joined', 'is_active')
+        read_only_fields = ('id', 'date_joined', 'is_active', 'focus_level')
+
+    def get_focus_level(self, obj):
+        try:
+            streak_days = obj.streak.current_streak_days
+            from .models import FocusSession
+            total_sessions = FocusSession.objects.filter(user=obj, is_completed=True).count()
+            score = streak_days * 5 + total_sessions * 2
+            if score >= 200:
+                return 'Deep Work Master'
+            elif score >= 100:
+                return 'Focused Achiever'
+            elif score >= 50:
+                return 'Flow Initiate'
+            return 'Beginner'
+        except Exception:
+            return 'Beginner'
 
     def get_profile(self, obj):
         try:
@@ -298,6 +316,16 @@ class DistractionEventSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('id', 'timestamp')
 
+class SessionDistractionLogSerializer(serializers.Serializer):
+    """POST /sessions/distraction - Log a distraction."""
+    session_id = serializers.IntegerField()
+    distraction_type = serializers.ChoiceField(
+        choices=DistractionEvent.DISTRACTION_TYPES, default='other'
+    )
+    severity = serializers.IntegerField(min_value=1, max_value=5, default=2)
+    description = serializers.CharField(max_length=300, required=False, default='')
+    recovery_time_seconds = serializers.IntegerField(default=0)
+
 
 # =============================================================================
 # ENVIRONMENT SERIALIZERS
@@ -342,6 +370,16 @@ class EnvironmentLogSerializer(serializers.ModelSerializer):
 # =============================================================================
 class EnvironmentOptimizeSerializer(serializers.Serializer):
     """POST /ai/optimize-environment - Request body."""
+    current_temperature = serializers.FloatField()
+    current_light_level = serializers.IntegerField()
+    current_noise_level = serializers.IntegerField()
+    task_type = serializers.ChoiceField(
+        choices=FocusSession.FOCUS_TASK_TYPES, default='deep_work'
+    )
+
+class AIAutoAdjustSerializer(serializers.Serializer):
+    """POST /api/v1/ai/auto-adjust"""
+    current_score = serializers.FloatField(help_text="Current live focus score or probability")
     current_temperature = serializers.FloatField()
     current_light_level = serializers.IntegerField()
     current_noise_level = serializers.IntegerField()

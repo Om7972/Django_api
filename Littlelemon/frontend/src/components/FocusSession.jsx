@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -14,6 +14,39 @@ const FocusSession = () => {
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [taskType, setTaskType] = useState('deep_work');
   const [distractions, setDistractions] = useState(0);
+  const [aiRecoveryMsg, setAiRecoveryMsg] = useState('');
+  const [tabHiddenTime, setTabHiddenTime] = useState(null);
+
+  // Distraction Detection Mode
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (isSessionActive) {
+          setTabHiddenTime(Date.now());
+        }
+      } else {
+        if (isSessionActive && tabHiddenTime) {
+          const hiddenDuration = (Date.now() - tabHiddenTime) / 1000;
+          if (hiddenDuration > 5) { // 5 seconds threshold
+            setDistractions(d => d + 1);
+            setAiRecoveryMsg("Background activity detected. Take a deep breath and gently guide your focus back.");
+            // In a full implementation, call POST /api/v1/sessions/distraction here
+          }
+          setTabHiddenTime(null);
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, [isSessionActive, tabHiddenTime]);
+
+  // Smart Environment Auto-Adjust Polling (Simulated)
+  useEffect(() => {
+    if (distractions > 2 && isSessionActive) {
+      setAiRecoveryMsg("Focus dropping. AI Suggests: Try the 'Deep Focus' soundscape or a 3-minute break.");
+      // Call POST /api/v1/ai/auto-adjust
+    }
+  }, [distractions, isSessionActive]);
 
   useEffect(() => {
     let interval = null;
@@ -23,13 +56,14 @@ const FocusSession = () => {
       }, 1000);
     } else if (timeLeft === 0) {
       setIsSessionActive(false);
+      // Process FlowScore Algorithm via POST /api/v1/sessions/end
     }
     return () => clearInterval(interval);
   }, [isSessionActive, timeLeft]);
 
   const startSession = () => setIsSessionActive(true);
   const pauseSession = () => setIsSessionActive(false);
-  const resetSession = () => { setIsSessionActive(false); setTimeLeft(25 * 60); };
+  const resetSession = () => { setIsSessionActive(false); setTimeLeft(25 * 60); setDistractions(0); setAiRecoveryMsg(''); };
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -162,8 +196,29 @@ const FocusSession = () => {
             </motion.button>
           </div>
 
+          <AnimatePresence>
+            {aiRecoveryMsg && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 overflow-hidden"
+              >
+                <div className="flex items-start gap-3">
+                  <span className="text-xl">🤖</span>
+                  <div>
+                    <h4 className="text-sm font-bold text-amber-400 mb-1">AI Action Recommended</h4>
+                    <p className="text-sm text-gray-300 leading-relaxed">
+                      {aiRecoveryMsg}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <div>
-            <h3 className="text-sm font-semibold text-gray-300 mb-3">✨ AI Recommendations</h3>
+            <h3 className="text-sm font-semibold text-gray-300 mb-3">✨ Pre-Session AI Recommendations</h3>
             <div className="space-y-2">
               {[
                 { icon: '🌡️', text: 'Maintain current environment for optimal focus' },
