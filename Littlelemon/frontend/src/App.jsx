@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import Dashboard from './components/Dashboard';
 import FocusSession from './components/FocusSession';
 import PredictiveAnalytics from './components/PredictiveAnalytics';
@@ -10,6 +11,9 @@ import LandingPage from './components/LandingPage';
 import PomodoroTimer from './components/PomodoroTimer';
 import Soundscapes from './components/Soundscapes';
 import Analytics from './components/Analytics';
+import Login from './components/Login';
+import Register from './components/Register';
+import Settings from './components/Settings';
 
 const navItems = [
   { name: 'Dashboard', path: '/dashboard', icon: '📊' },
@@ -26,6 +30,7 @@ const Navigation = () => {
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -93,14 +98,26 @@ const Navigation = () => {
 
           {/* Right Section */}
           <div className="flex items-center gap-3">
-            {/* Profile */}
-            <div className="hidden sm:flex items-center gap-2.5">
-              <img
-                src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop"
-                alt="User Avatar"
-                className="w-8 h-8 rounded-full border-2 border-white/10 object-cover"
-              />
-            </div>
+            {/* Auth/Profile */}
+            {user ? (
+              <div className="hidden sm:flex items-center gap-4">
+                <Link to="/settings" className="text-sm font-medium text-gray-400 hover:text-white transition-colors">Settings</Link>
+                <button onClick={logout} className="text-sm font-medium text-rose-400 hover:text-rose-300 transition-colors">Logout</button>
+                <div className="flex items-center gap-2.5 ml-2 border-l border-white/10 pl-4">
+                  <img
+                    src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=100&auto=format&fit=crop"
+                    alt="User Avatar"
+                    className="w-8 h-8 rounded-full border-2 border-white/10 object-cover"
+                  />
+                  <span className="text-sm text-white font-medium">{user.username || user.first_name}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="hidden sm:flex items-center gap-3">
+                <Link to="/login" className="text-sm text-gray-300 hover:text-white font-medium transition-colors">Sign In</Link>
+                <Link to="/register" className="clay-button text-xs px-4 py-2">Free Trial</Link>
+              </div>
+            )}
 
             {/* Mobile Menu Toggle */}
             <button
@@ -163,9 +180,16 @@ const Navigation = () => {
   );
 };
 
+const PrivateRoute = ({ children }) => {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" />;
+  return children;
+};
+
 const AnimatedRoutes = () => {
   const location = useLocation();
-  const isLanding = location.pathname === '/';
+  const isLanding = location.pathname === '/' || location.pathname === '/login' || location.pathname === '/register';
 
   return (
     <div className={isLanding ? '' : 'pt-28'}>
@@ -180,14 +204,17 @@ const AnimatedRoutes = () => {
           >
             <Routes location={location}>
               <Route path="/" element={<LandingPage />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/focus" element={<FocusSession />} />
-              <Route path="/pomodoro" element={<PomodoroTimer />} />
-              <Route path="/soundscapes" element={<Soundscapes />} />
-              <Route path="/analytics" element={<Analytics />} />
-              <Route path="/environment" element={<SmartEnvironment />} />
-              <Route path="/tasks" element={<TaskIntelligence />} />
-              <Route path="/predictions" element={<PredictiveAnalytics />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+              <Route path="/focus" element={<PrivateRoute><FocusSession /></PrivateRoute>} />
+              <Route path="/pomodoro" element={<PrivateRoute><PomodoroTimer /></PrivateRoute>} />
+              <Route path="/soundscapes" element={<PrivateRoute><Soundscapes /></PrivateRoute>} />
+              <Route path="/analytics" element={<PrivateRoute><Analytics /></PrivateRoute>} />
+              <Route path="/environment" element={<PrivateRoute><SmartEnvironment /></PrivateRoute>} />
+              <Route path="/tasks" element={<PrivateRoute><TaskIntelligence /></PrivateRoute>} />
+              <Route path="/predictions" element={<PrivateRoute><PredictiveAnalytics /></PrivateRoute>} />
+              <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
             </Routes>
           </motion.div>
         </AnimatePresence>
@@ -199,19 +226,21 @@ const AnimatedRoutes = () => {
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-[#0a0e1a] relative overflow-hidden">
-        {/* Ambient Background */}
-        <div className="fixed inset-0 pointer-events-none">
-          <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-indigo-600/[0.07] rounded-full blur-[120px]" />
-          <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-purple-600/[0.05] rounded-full blur-[120px]" />
-          <div className="absolute top-1/2 left-1/2 w-[400px] h-[400px] bg-pink-600/[0.03] rounded-full blur-[120px]" />
-        </div>
+      <AuthProvider>
+        <div className="min-h-screen bg-[#0a0e1a] relative overflow-hidden">
+          {/* Ambient Background */}
+          <div className="fixed inset-0 pointer-events-none z-0">
+            <div className="absolute top-0 left-1/4 w-[600px] h-[600px] bg-indigo-600/[0.07] rounded-full blur-[120px]" />
+            <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-purple-600/[0.05] rounded-full blur-[120px]" />
+            <div className="absolute top-1/2 left-1/2 w-[400px] h-[400px] bg-pink-600/[0.03] rounded-full blur-[120px]" />
+          </div>
 
-        <div className="relative z-10">
-          <Navigation />
-          <AnimatedRoutes />
+          <div className="relative z-10">
+            <Navigation />
+            <AnimatedRoutes />
+          </div>
         </div>
-      </div>
+      </AuthProvider>
     </Router>
   );
 }

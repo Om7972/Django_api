@@ -94,8 +94,8 @@ const LandingPage = () => {
         animate={{ y: 0 }}
         transition={{ type: 'spring', stiffness: 80, damping: 18 }}
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${scrolled
-            ? 'py-3 backdrop-blur-xl bg-[#0a0e1a]/80 border-b border-white/[0.06] shadow-xl shadow-black/20'
-            : 'py-5 bg-transparent'
+          ? 'py-3 backdrop-blur-xl bg-[#0a0e1a]/80 border-b border-white/[0.06] shadow-xl shadow-black/20'
+          : 'py-5 bg-transparent'
           }`}
         id="landing-header"
       >
@@ -121,14 +121,14 @@ const LandingPage = () => {
 
           <div className="flex items-center gap-3">
             <Link
-              to="/dashboard"
+              to="/login"
               className="text-sm text-gray-300 hover:text-white transition-colors font-medium px-4 py-2 rounded-xl hover:bg-white/[0.06]"
               id="landing-signin"
             >
               Sign In
             </Link>
             <Link
-              to="/dashboard"
+              to="/register"
               className="clay-button text-sm px-5 py-2.5"
               id="landing-getstarted"
             >
