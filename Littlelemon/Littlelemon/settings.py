@@ -216,18 +216,26 @@ CORS_ALLOW_HEADERS = [
 # Redis & Caching
 # =============================================================================
 REDIS_URL = config('REDIS_URL', default='redis://127.0.0.1:6379/0')
+USE_REDIS = config('USE_REDIS', default=True, cast=bool)
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': REDIS_URL,
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-        },
-        'KEY_PREFIX': 'flowspace',
-        'TIMEOUT': 300,  # 5 minutes default
+if USE_REDIS:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': REDIS_URL,
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            },
+            'KEY_PREFIX': 'flowspace',
+            'TIMEOUT': 300,  # 5 minutes default
+        }
     }
-}
+else:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        }
+    }
 
 import sys
 if 'test' in sys.argv:
@@ -239,8 +247,11 @@ if 'test' in sys.argv:
 
 
 # Use Redis for session backend too
-SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
-SESSION_CACHE_ALIAS = 'default'
+if USE_REDIS:
+    SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
+    SESSION_CACHE_ALIAS = 'default'
+else:
+    SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
 # =============================================================================
 # Django Channels (WebSocket)
