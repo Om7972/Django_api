@@ -14,6 +14,7 @@ import Analytics from './components/Analytics';
 import Login from './components/Login';
 import Register from './components/Register';
 import Settings from './components/Settings';
+import Gamification from './components/Gamification';
 
 const navItems = [
   { name: 'Dashboard', path: '/dashboard', icon: '📊' },
@@ -24,6 +25,7 @@ const navItems = [
   { name: 'Environment', path: '/environment', icon: '🌿' },
   { name: 'Tasks', path: '/tasks', icon: '✅' },
   { name: 'Predictions', path: '/predictions', icon: '🔮' },
+  { name: 'Gamification', path: '/gamification', icon: '🏆' },
 ];
 
 const Navigation = () => {
@@ -214,6 +216,7 @@ const AnimatedRoutes = () => {
               <Route path="/environment" element={<PrivateRoute><SmartEnvironment /></PrivateRoute>} />
               <Route path="/tasks" element={<PrivateRoute><TaskIntelligence /></PrivateRoute>} />
               <Route path="/predictions" element={<PrivateRoute><PredictiveAnalytics /></PrivateRoute>} />
+              <Route path="/gamification" element={<PrivateRoute><Gamification /></PrivateRoute>} />
               <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
             </Routes>
           </motion.div>

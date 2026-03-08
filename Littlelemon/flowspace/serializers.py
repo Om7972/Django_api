@@ -90,6 +90,7 @@ class UserMeSerializer(serializers.ModelSerializer):
     profile = serializers.SerializerMethodField()
     subscription = serializers.SerializerMethodField()
     streak = serializers.SerializerMethodField()
+    achievements = serializers.SerializerMethodField()
 
     focus_level = serializers.SerializerMethodField()
 
@@ -98,9 +99,9 @@ class UserMeSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'username', 'email', 'first_name', 'last_name',
             'date_joined', 'is_active', 'focus_level',
-            'profile', 'subscription', 'streak',
+            'profile', 'subscription', 'streak', 'achievements',
         )
-        read_only_fields = ('id', 'date_joined', 'is_active', 'focus_level')
+        read_only_fields = ('id', 'date_joined', 'is_active', 'focus_level', 'achievements')
 
     def get_focus_level(self, obj):
         try:
@@ -135,6 +136,21 @@ class UserMeSerializer(serializers.ModelSerializer):
             return UserStreakSerializer(obj.streak).data
         except UserStreak.DoesNotExist:
             return None
+
+    def get_achievements(self, obj):
+        # We assume UserAchievementSerializer is defined below. 
+        # But wait, UserAchievementSerializer is defined at line 524. We should use it or return raw dictionary to avoid circular dependency/not defined error if defined below.
+        achievements = obj.achievements.select_related('achievement').all()
+        return [
+            {
+                'id': a.achievement.id,
+                'name': a.achievement.name,
+                'icon': a.achievement.icon,
+                'description': a.achievement.description,
+                'rarity': a.achievement.rarity,
+                'unlocked_at': a.unlocked_at,
+            } for a in achievements
+        ]
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):

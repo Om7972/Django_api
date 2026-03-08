@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+import { useAuth } from '../context/AuthContext';
+
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
   visible: (i = 0) => ({
@@ -10,12 +12,28 @@ const fadeUp = {
 };
 
 const FocusSession = () => {
+  const { api } = useAuth();
   const [isSessionActive, setIsSessionActive] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
   const [timeLeft, setTimeLeft] = useState(25 * 60);
   const [taskType, setTaskType] = useState('deep_work');
   const [distractions, setDistractions] = useState(0);
   const [aiRecoveryMsg, setAiRecoveryMsg] = useState('');
   const [tabHiddenTime, setTabHiddenTime] = useState(null);
+  const [predictions, setPredictions] = useState(null);
+  const [finalScore, setFinalScore] = useState(null);
+
+  useEffect(() => {
+    const fetchPredictions = async () => {
+      try {
+        const res = await api.get(`/ai/focus-prediction?task_type=${taskType}`);
+        setPredictions(res.data);
+      } catch (err) {
+        console.error('Failed to get predictions', err);
+      }
+    };
+    fetchPredictions();
+  }, [taskType, api]);
 
   // Distraction Detection Mode
   useEffect(() => {
@@ -27,10 +45,20 @@ const FocusSession = () => {
       } else {
         if (isSessionActive && tabHiddenTime) {
           const hiddenDuration = (Date.now() - tabHiddenTime) / 1000;
-          if (hiddenDuration > 5) { // 5 seconds threshold
+          if (hiddenDuration > 5) {
             setDistractions(d => d + 1);
-            setAiRecoveryMsg("Background activity detected. Take a deep breath and gently guide your focus back.");
-            // In a full implementation, call POST /api/v1/sessions/distraction here
+            if (sessionId) {
+              api.post('/sessions/distraction', {
+                session_id: sessionId,
+                distraction_type: 'other',
+                severity: 2,
+                recovery_time_seconds: Math.floor(hiddenDuration)
+              }).then(res => {
+                setAiRecoveryMsg(res.data.recovery_suggestion || "Background activity detected. Take a deep breath and gently guide your focus back.");
+              }).catch(err => console.error(err));
+            } else {
+              setAiRecoveryMsg("Background activity detected. Take a deep breath and gently guide your focus back.");
+            }
           }
           setTabHiddenTime(null);
         }
@@ -40,13 +68,21 @@ const FocusSession = () => {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [isSessionActive, tabHiddenTime]);
 
-  // Smart Environment Auto-Adjust Polling (Simulated)
   useEffect(() => {
-    if (distractions > 2 && isSessionActive) {
-      setAiRecoveryMsg("Focus dropping. AI Suggests: Try the 'Deep Focus' soundscape or a 3-minute break.");
-      // Call POST /api/v1/ai/auto-adjust
+    if (distractions > 2 && isSessionActive && sessionId) {
+      api.post('/ai/auto-adjust', {
+        current_score: 60,
+        current_temperature: 22.0,
+        current_light_level: 350,
+        current_noise_level: 45,
+        task_type: taskType
+      }).then(res => {
+        if (res.data.needs_adjustment && res.data.suggestions.length > 0) {
+          setAiRecoveryMsg("AI Suggests: " + res.data.suggestions[0].action + " - " + res.data.suggestions[0].reason);
+        }
+      }).catch(err => console.error(err));
     }
-  }, [distractions, isSessionActive]);
+  }, [distractions, isSessionActive, sessionId, api, taskType]);
 
   useEffect(() => {
     let interval = null;
@@ -54,16 +90,55 @@ const FocusSession = () => {
       interval = setInterval(() => {
         setTimeLeft(t => t - 1);
       }, 1000);
-    } else if (timeLeft === 0) {
-      setIsSessionActive(false);
-      // Process FlowScore Algorithm via POST /api/v1/sessions/end
+    } else if (timeLeft === 0 && isSessionActive) {
+      endSession();
     }
     return () => clearInterval(interval);
   }, [isSessionActive, timeLeft]);
 
-  const startSession = () => setIsSessionActive(true);
+  const startSession = async () => {
+    try {
+      const res = await api.post('/sessions/start', {
+        task_type: taskType,
+        label: `Focusing on ${taskType}`,
+        start_temperature: 22.0,
+        start_light_level: 300,
+        start_noise_level: 40
+      });
+      setSessionId(res.data.id);
+      setIsSessionActive(true);
+      setFinalScore(null);
+      setDistractions(0);
+      setAiRecoveryMsg('');
+    } catch (err) {
+      console.error('Error starting session', err);
+    }
+  };
+
+  const endSession = async () => {
+    if (sessionId) {
+      try {
+        const res = await api.post('/sessions/end', {
+          session_id: sessionId,
+          distractions_count: distractions,
+          focus_score: 80
+        });
+        setFinalScore(res.data.focus_score);
+      } catch (err) {
+        console.error('Error ending session', err);
+      }
+    }
+    setIsSessionActive(false);
+    setSessionId(null);
+  };
+
   const pauseSession = () => setIsSessionActive(false);
-  const resetSession = () => { setIsSessionActive(false); setTimeLeft(25 * 60); setDistractions(0); setAiRecoveryMsg(''); };
+  const resetSession = () => {
+    if (isSessionActive) endSession();
+    setTimeLeft(25 * 60);
+    setDistractions(0);
+    setAiRecoveryMsg('');
+  };
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
@@ -219,26 +294,38 @@ const FocusSession = () => {
 
           <div>
             <h3 className="text-sm font-semibold text-gray-300 mb-3">✨ Pre-Session AI Recommendations</h3>
-            <div className="space-y-2">
-              {[
-                { icon: '🌡️', text: 'Maintain current environment for optimal focus' },
-                { icon: '☕', text: 'Take a 5-minute break after this session' },
-                { icon: '🎵', text: 'Try the "Deep Focus" soundscape for better concentration' },
-              ].map((item, index) => (
-                <motion.div
-                  key={index}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.04] hover:bg-white/[0.05] hover:border-white/[0.07] transition-all cursor-pointer"
-                  variants={fadeUp}
-                  initial="hidden"
-                  animate="visible"
-                  custom={index + 3}
-                  whileHover={{ x: 4 }}
-                >
-                  <span className="text-lg">{item.icon}</span>
-                  <span className="text-sm text-gray-400">{item.text}</span>
-                </motion.div>
-              ))}
-            </div>
+            {predictions && (
+              <motion.div
+                className="mb-4 p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="text-xs font-bold text-indigo-400">Predicted Flow Score</h4>
+                  <span className="text-lg font-bold text-indigo-400">{predictions.predicted_focus_score}</span>
+                </div>
+                <p className="text-xs text-gray-300">{predictions.recommendation}</p>
+                <div className="flex gap-2 mt-2">
+                  {Object.entries(predictions.factors).map(([key, f]) => (
+                    <span key={key} className="text-[10px] bg-white/5 px-2 py-1 rounded-full text-gray-400">
+                      {f.label} ({f.score_impact > 0 ? '+' : ''}{f.score_impact})
+                    </span>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+
+            {finalScore !== null && (
+              <motion.div
+                className="mb-4 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20"
+                initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="text-xs font-bold text-emerald-400">Session Completed!</h4>
+                </div>
+                <p className="text-sm text-white font-bold mb-1">Your FlowScore: {finalScore}</p>
+                <p className="text-xs text-gray-300">Great job! Your streak has been updated.</p>
+              </motion.div>
+            )}
           </div>
         </motion.div>
       </div>
